@@ -1,0 +1,556 @@
+from colorama import init, Fore, Back, Style
+import fitz  # PyMuPDF
+from reportlab.pdfgen import canvas
+import os
+import shutil
+from PIL import Image, ImageEnhance
+from zipfile import ZipFile
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+import time
+def zip_single_folder(input_output_tuple):
+    input_folder, output_folder = input_output_tuple
+    folder_name = os.path.basename(input_folder)
+    output_zip = os.path.join(output_folder, f'{folder_name}.zip')
+
+    with ZipFile(output_zip, 'w') as zipf:
+        for root, dirs, files in os.walk(input_folder):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, input_folder)
+                zipf.write(file_path, arcname)
+
+    print(f'Đã nén thành công thư mục {folder_name} vào {output_zip}')
+
+def zip_folders(input_folder, output_folder):
+    input_output_tuples = [(os.path.join(input_folder, folder_name), output_folder) for folder_name in os.listdir(input_folder) if os.path.isdir(os.path.join(input_folder, folder_name))]
+
+    with ThreadPoolExecutor() as executor:
+        executor.map(zip_single_folder, input_output_tuples)
+def process_names(name,base_name_zip):
+    # Thực hiện đổi tên theo quy chuẩn
+    parts = name.split('_')
+    year = parts[0]
+    month = '0'+str(int(parts[1])) if len(parts) > 1 else '01'
+    new_name = f'{base_name_zip}.{year}.{month}'
+    return new_name
+
+def DoitenNhieu_folders(input_folder):
+    base_name = input('Nhập Tên Cơ Bản Của xã, VD: xatucuong_hgl_thd\n').lower()
+    #print(base_name)
+    #input()
+    lso = ['HN','KS','KT','KH']
+    for root, dirs, files in os.walk(input_folder):
+        if str(root[-2:]) in lso:
+            loaiso = base_name+'.'+str(root[-2:])
+
+            for item_name in os.listdir(root):
+                item_path = os.path.join(root, item_name)
+                if os.path.isdir(item_path) and "_thd." not in item_name:
+                    # Xử lý tên thư mục
+                    new_name = process_names(item_name,loaiso)
+                    new_path = os.path.join(root, new_name)
+                    os.rename(item_path, new_path)
+                    print(f'Dã đổi tên thư mục: {item_name} -> {new_name}')
+
+                elif os.path.isfile(item_path):
+                    # Xử lý tên tệp tin
+                    file_name, file_ext = os.path.splitext(item_name)
+                    if "_thd." not in file_name:
+                        new_name = process_names(file_name,loaiso) + file_ext
+                        new_path = os.path.join(root, new_name)
+                        os.rename(item_path, new_path)
+                        print(f'Đã đổi tên tệp tin: {item_name} -> {new_name}')
+def zipNhieu_folders(input_folder):
+    input_output_tuples = []
+
+    for root, dirs, files in os.walk(input_folder):
+        for folder_name in dirs:
+            if "_thd." in folder_name:
+                folder_path = os.path.join(root, folder_name)
+                input_output_tuples.append((folder_path, root))
+
+    with ThreadPoolExecutor() as executor:
+        executor.map(zip_single_folder, input_output_tuples)
+
+
+def rename_files_and_folders(base_path ,base_name_zip):
+    for item_name in os.listdir(base_path):
+        item_path = os.path.join(base_path, item_name)
+
+        if os.path.isdir(item_path) and "_thd." not in item_name:
+            # Xử lý tên thư mục
+            new_name = process_name(item_name)
+            new_path = os.path.join(base_path, new_name)
+            os.rename(item_path, new_path)
+            print(f'Dã đổi tên thư mục: {item_name} -> {new_name}')
+
+        elif os.path.isfile(item_path)  :
+            # Xử lý tên tệp tin
+            file_name, file_ext = os.path.splitext(item_name)
+            if "_thd." not in file_name:
+                new_name = process_name(file_name) + file_ext
+                new_path = os.path.join(base_path, new_name)
+                os.rename(item_path, new_path)
+                print(f'Đã đổi tên tệp tin: {item_name} -> {new_name}')
+
+
+def process_name(name):
+    # Thực hiện đổi tên theo quy chuẩn
+    parts = name.split('_')
+    year = parts[0]
+    month = '0'+str(int(parts[1])) if len(parts) > 1 else '01'
+    new_name = f'{base_name_zip}.{year}.{month}'
+    return new_name
+
+def pdf_to_jpg(input_path, output_path, qlt):
+    # Kiểm tra xem thư mục đầu ra có tồn tại hay không, nếu không thì tạo mới
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    # Lặp qua tất cả các tệp PDF trong thư mục đầu vào
+    for filename in os.listdir(input_path):
+        if filename.endswith(".pdf"):
+            pdf_path = os.path.join(input_path, filename)
+            doc = fitz.open(pdf_path)
+
+            # Lặp qua từng trang trong PDF
+            for page_num in range(doc.page_count):
+                page = doc[page_num]
+
+                # Lưu trang dưới dạng tệp JPG
+                img_filename = f"{os.path.splitext(filename)[0]}.jpg"
+                img_path = os.path.join(output_path, img_filename)
+                pix = page.get_pixmap()
+
+                # Sử dụng Pillow để lưu tệp JPG
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+                if not qlt:
+                    qlt = 100
+                else:
+                    qlt = int(qlt)
+
+                img.save(img_path, "JPEG",quality=qlt)
+
+            doc.close()
+
+def jpg_to_pdf(input_folder, output_path):
+    # Kiểm tra xem thư mục đầu ra có tồn tại hay không, nếu không thì tạo mới
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    # Lặp qua tất cả các tệp JPG trong thư mục đầu vào
+    for filename in os.listdir(input_folder):
+        if filename.endswith(".jpg"):
+            img_path = os.path.join(input_folder, filename)
+
+            # Tạo một tệp PDF mới cho mỗi ảnh
+            pdf_output_path = os.path.join(output_path, f"{os.path.splitext(filename)[0]}.pdf")
+
+            # Tạo PDF và thêm ảnh vào
+            c = canvas.Canvas(pdf_output_path)
+            img = Image.open(img_path)
+            width, height = img.size
+
+            # Thiết lập kích thước trang PDF theo kích thước ảnh
+            c.setPageSize((width, height))
+            c.drawImage(img_path, 0, 0, width, height)
+
+            # Lưu tệp PDF
+            c.save()
+def move_files(choice, root_path, destination_path):
+    if not os.path.exists(destination_path):
+        os.makedirs(destination_path)
+
+    if choice == '3':
+        move_to_destination = True
+        print(0)
+    elif choice == '4':
+        move_to_destination = False
+        print(1)
+        print(root_path)
+
+    file_list = []
+    for root, dirs, files in os.walk(root_path):
+        for file in files:
+            file_list.append(os.path.join(root, file))
+
+    for file in file_list:
+        relative_path = os.path.relpath(file, root_path)
+        #print(relative_path)
+
+
+        if move_to_destination:
+            new_name = relative_path.replace('\\', '=')
+
+            destination = os.path.join(destination_path, new_name)
+            shutil.move(file, destination)
+            print(destination)
+        else:
+            try:
+                #relative_path = os.path.relpath(file, destination_path)
+                #print(relative_path)
+                new_name = relative_path.replace('=', '\\')
+                destination = os.path.join(destination_path, new_name)
+                print(destination)
+                shutil.move(file, destination)
+                #input()
+            except:
+                pass
+    print("\n\n"+f"Đã Di Chuyển Thành Công {len(file_list)} Files Từ {root_path} Đến {destination_path}")
+
+def xulimang(input_list):
+    #input_list = sortlistarr(input_list)
+    result_list = []
+    i = 0
+
+    while i < len(input_list):
+        current_element = input_list[i]
+        #print('curentelement',current_element)
+        # Kiểm tra xem phần tử có chỉ số phụ hay không
+        if '(' in current_element and ')' in current_element:
+            base_number, sub_index = current_element.split('(')
+            sub_index = sub_index.rstrip(')')
+            sub_index = int(sub_index)
+            base_number = int(base_number)
+            # Khởi tạo danh sách để chứa các số liên tiếp cùng chỉ số
+            consecutive_numbers = [base_number]
+            index_r = 1
+            # Kiểm tra phần tử tiếp theo có cùng chỉ số phụ hay không
+            while i + 1 < len(input_list) and '(' in input_list[i + 1] and ')' in input_list[i + 1]:
+                next_base_number, next_sub_index = input_list[i + 1].split('(')
+                next_sub_index = next_sub_index.rstrip(')')
+                next_sub_index = int(next_sub_index)
+                next_base_number = int(next_base_number)
+                #print(sub_index == next_sub_index)
+                # Nếu chỉ số phụ giống nhau, thêm số vào danh sách
+                if sub_index == next_sub_index and base_number + index_r == next_base_number:
+                    consecutive_numbers.append(next_base_number)
+                    i += 1
+                else:
+                    break
+
+                index_r += 1
+
+            # Tạo chuỗi kết quả với danh sách các số liên tiếp
+            if len(consecutive_numbers) > 1:
+                base_number_str = f'{consecutive_numbers[0]}-{consecutive_numbers[-1]}'
+                result_list.append(f'({base_number_str})({sub_index})')
+                #print(base_number_str)
+            else:
+                result_list.append(f'{base_number}({sub_index})')
+                # print(f'{base_number}({sub_index})')
+        else:
+            # Kiểm tra xem phần tử tiếp theo có chỉ số phụ hay không
+            if i + 1 < len(input_list) and '(' not in input_list[i + 1] and ')' not in input_list[i + 1]:
+                current_element = int(current_element)
+                next_base_number = current_element + 1
+                index_l =1
+                #print(i + 1 < len(input_list) and '(' not in input_list[i + 1] and ')' not in input_list[i + 1])
+                while i + 1 < len(input_list) and '(' not in str(input_list[i + 1]) and ')' not in str(input_list[i + 1]):
+                    #print(current_element + index_l )
+                    #print(input_list[i+1])
+                    try:
+                        if int(current_element + index_l) == int(input_list[i+1]):
+                            next_base_number = input_list[i+1]
+                            index_l += 1
+                            #print('zo if')
+                        else:
+                            break
+                            #print("beak")
+                        i += 1
+                    except:
+                        break
+
+                #print(next_base_number)
+                result_list.append(f'{current_element}-{next_base_number}')
+            else:
+                result_list.append(current_element)
+
+        i += 1
+    return result_list
+def rename_files(directory):
+    files = sorted([file_name for file_name in os.listdir(directory) if '_' in file_name], key=lambda x: int(x.split('_')[0]))
+    # print(files)
+
+    dict_name_file = {i: 0 for i in range(1, 1001)}
+
+    for file_name in files :
+        base_name, ext = os.path.splitext(file_name)
+        parts = base_name.split('_')
+
+        # print(parts)
+
+        if len(parts) == 2:
+            prefix, range_part = parts
+            # print(range_part)
+            if '-' in str(range_part):
+                start, end = map(int, range_part.split('-'))
+                list_temp = [i for i in range(int(start), int(end) + 1)]
+            else:
+                list_temp = [int(range_part)]
+            # print(list_temp)
+            name_re = ''
+            next = False
+            for temps in list_temp:
+                if dict_name_file[temps] > 0:
+                    next = True
+
+            if next:
+                for temps in list_temp:
+                    if dict_name_file[temps] > 0:
+                        name_re += f"{temps}({dict_name_file[temps]}),"
+                    else:
+                        name_re += f"{temps},"
+                    dict_name_file[temps] += 1
+                    # dict_name_file[temps] = dict_name_file.get(temps, 0) + 1
+                    # print("sucess")
+                name_re = name_re.rstrip(',')
+            elif not next:
+                for temps in list_temp:
+                    dict_name_file[temps] += 1
+                name_re = range_part
+
+            name_re = name_re.split(',')
+            name_re = list(filter(None, name_re))
+            name_re =xulimang(name_re)
+            name_re = ','.join(name_re)
+            name_re = name_re.rstrip(',') + ext
+            os.rename(os.path.join(directory, file_name), os.path.join(directory, name_re))
+            print("Đã Đổi tên mới thành công từ : ", file_name, " --> ", name_re)
+
+        if len(parts) > 2:
+
+            checks = False
+            name_re = ''
+            for data_v in parts[1:]:
+                #print(data_v)
+                if '-' not in data_v and "b" not in data_v:
+                    thangle = int(data_v)
+                    if dict_name_file[thangle]:
+                        name_re += f"{thangle}({dict_name_file[thangle]}),"
+                    else:
+                        name_re += f"{thangle},"
+                    dict_name_file[thangle] += 1
+                elif 'b' in data_v:
+                    checks = True
+                    loaibo = data_v.replace('b', '')
+                    loaibo = loaibo.split(",") if ',' in loaibo else [loaibo]
+                    #print("loai bo = ", loaibo)
+                else:
+                    # print(range_part)
+                    start, end = map(int, data_v.split('-'))
+                    list_temp = [i for i in range(start, end + 1)]
+                    #print(list_temp)
+                    # print(list_temp)
+                    next = False
+                    for temps in list_temp:
+                        if dict_name_file[temps] > 0:
+                            name_re += f'{temps}({dict_name_file[temps]}),'
+                        else:
+                            name_re += str(temps) +','
+                        dict_name_file[temps] += 1
+                    #print('tep sau khi fix',name_re)
+            if checks:
+                data = name_re.split(',')
+                check_bo = data
+                #print('tentruocbo', check_bo)
+
+                for bodi in loaibo:
+                    dict_name_file[int(bodi)] -= 1
+                    check_bo = [i for i in check_bo if str(bodi) not in i[0:len(str(bodi))]]
+
+                name_re = ','.join(check_bo)  # Initialize name_re with the modified check_bo outside the loop
+                #print('tensaubo', name_re)
+
+                #print(name_re)
+            name_re = name_re.split(',')
+            name_re = list(filter(None, name_re))
+            name_re =xulimang(name_re)
+
+            name_re = ','.join(name_re)
+            name_re = name_re.rstrip(',') + ext
+            os.rename(os.path.join(directory, file_name), os.path.join(directory, name_re))
+            print("Đã Đổi tên mới thành công từ : ", file_name, " --> ", name_re)
+
+def find_ghostscript_path():
+    drive, _ = os.path.splitdrive(os.getcwd())
+    ghostscript_path = os.path.join(drive, r'\gostscriptNenPdf\bin\gswin64c.exe')
+    print(ghostscript_path)
+    if os.path.exists(ghostscript_path):
+        return ghostscript_path
+    else:
+        raise FileNotFoundError("Không tìm thấy Ghostscript. Hãy kiểm tra đường dẫn.")
+
+def compress_pdf(input_path, output_path, ghostscript_path):
+    # Ensure the output folder exists
+    output_folder = os.path.dirname(output_path)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    command = [
+        ghostscript_path,
+        "-sDEVICE=pdfwrite",
+        "-dCompatibilityLevel=1.4",
+        "-dPDFSETTINGS=/ebook",
+        "-dNOPAUSE",
+        "-dQUIET",
+        "-dBATCH",
+        "-sOutputFile=" + output_path,
+         "-dDownScaleFactor=2",  # Set the general image resolution to 300 dpi
+        input_path
+    ]
+    subprocess.run(command)
+    print("đã nén thành công", input_path)
+
+def compress_pdfs_in_folder(folder_path, ghostscript_path, pdf_luu, num_threads=12):
+    if not os.path.exists(pdf_luu):
+        os.makedirs(pdf_luu)
+    pdf_files = [file for file in os.listdir(folder_path) if file.lower().endswith(".pdf")]
+
+    # Kiểm tra xem có nên sử dụng đa luồng hay không
+    if len(pdf_files) > 10:
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            # Tạo danh sách các nhiệm vụ đa luồng
+            tasks = []
+            for pdf_file in pdf_files:
+                input_pdf_path = os.path.join(folder_path, pdf_file)
+                output_pdf_path = os.path.join(pdf_luu, pdf_file)
+
+                # Thêm nhiệm vụ vào danh sách
+                tasks.append(executor.submit(compress_pdf, input_pdf_path, output_pdf_path, ghostscript_path))
+
+            # Chờ cho tất cả các nhiệm vụ hoàn thành
+            for future in tasks:
+                future.result()
+    else:
+        # Nếu số lượng file không đủ, thực hiện nén một lần
+        for pdf_file in pdf_files:
+            input_pdf_path = os.path.join(folder_path, pdf_file)
+            output_pdf_path = os.path.join(pdf_luu, pdf_file)
+            compress_pdf(input_pdf_path, output_pdf_path, ghostscript_path)
+
+
+def handle_rename_files():
+    print("--Replace Tên File--".center(60,"😁"))
+    folder_path = input("Nhập đường dẫn folder: ")
+    old_text = input("Nhập text cũ: ( nếu không nhập mặc định là --compressed)!")
+    if not old_text:
+        old_text = '--compressed'
+        new_text = ''
+    else:
+        new_text = input("Nhập text mới: ")
+
+    def rename_file(file_name):
+        old_path = os.path.join(folder_path, file_name)
+        new_file_name = file_name.replace(old_text, new_text)
+        new_path = os.path.join(folder_path, new_file_name)
+
+        os.rename(old_path, new_path)
+        print(f"đã Đổi tên từ : {file_name} -->> {new_file_name}")
+
+    files = os.listdir(folder_path)
+    start = time.time()
+
+    with ThreadPoolExecutor() as executor:
+        executor.map(rename_file, [file_name for file_name in files if old_text in file_name])
+
+    print(f"Đổi tên xong trong {time.time() - start} giây")
+
+
+try:
+    if __name__ == "__main__":
+        tieude = 'create by DuyKhanh '.center(100, '-')
+        tenchuongtrinh = ' xulyfile v1.5.3 '.center(100,'*')
+        while True:
+
+            try:
+                print(tenchuongtrinh)
+                print(tieude)
+
+                print("Chọn quy trình chuyển đổi:")
+                print("1. PDF to JPG")
+                print("2. JPG to PDF")
+                print("3: Di chuyển từ nhánh thư mục về một thư mục.")
+                print('4: Di chuyển từ một thư mục về nhánh thư mục.')
+                print("5. Đổi tên file trùng số")
+                print("6. Đổi tên và Zip file ( Bước Cuối , đặt tên và zip) ")
+                print("7. Nén PDF (beta)")
+                print("8. Replace Tên File")
+                print("9. Thoát")
+
+                choice = input("Nhập lựa chọn của bạn (1/2/3/4/5/6/7/8/9/10): ")
+
+                if choice == "1":
+                    pdf_input_folder = input("Nhập đường dẫn đến thư mục chứa tệp PDF: ").strip()
+                    jpg_output_folder = input("Nhập đường dẫn đến thư mục lưu trữ ảnh JPG: ").strip()
+                    quality = input("Nhập Chất lượng hình ảnh (40-100):").strip()
+                    pdf_to_jpg(pdf_input_folder, jpg_output_folder, quality)
+                    print("Chuyển đổi hoàn thành.")
+                elif choice == "2":
+                    jpg_input_folder = input("Nhập đường dẫn đến thư mục chứa ảnh JPG: ").strip()
+                    pdf_output_folder = input("Nhập đường dẫn đến thư mục lưu trữ tệp PDF: ").strip()
+                    jpg_to_pdf(jpg_input_folder, pdf_output_folder)
+                    print("Chuyển đổi hoàn thành.")
+                elif choice == "3" or choice == '4':
+                    root_path = input("Nhập thư mục ban đầu: ")
+                    destination_path = input("Nhập thư mục đích: ")
+                    move_files(choice, root_path, destination_path)
+                elif choice == '5':
+                    print("\n\n\nLưu Ý!!!\ncách đặt tên để đổi có định dạng :\n           tháng_số-số ví dụ 1_1-6  \nnếu sổ có hơn 2 trường hợp trong một ảnh thì cách nhau bằng '_' ví dụ :\nTrang tháng 3 có số từ 1-6 và lặp lại 1 sẽ được đặt là 3_1-6_1\nNếu có trường hợp bỏ ví dụ là 1 vẫn viết thêm _b1 bình thường!")
+                    pdf_path = input("Nhập đường dẫn đến PDF trùng tên của bạn: ").strip()
+                    rename_files(pdf_path)
+                    print("Chuyển đổi hoàn thành!.")
+                elif choice == '6':
+                    print("Chọn quy trình chuyển đổi:")
+                    print("1. Chỉ Đổi Tên Folder")
+                    print("2. Chỉ Zip")
+                    print("3: Vừa Đổi tên vừa nén Folder.")
+                    print("4: Nén Nhiều Folder ( cả xã, huyện ).")
+                    print("5: Đổi Tên Nhiều Folder và Files ( cả xã ).")
+                    print(" 6: Đổi Tên Nhiều Folder, Files và Zip ( cả xã ).Nguy Hiểm ".center(100,'!'))
+                    choie = input().strip()
+                    if choie == "1":
+                        input_folder = input("Nhập đường dẫn đến Folder chứa các folder muốn đổi tên: ").strip()
+                        base_name_zip = input("Nhập tên cơ bản của folder VD: xatrungkhanh_hgl_thd.KH\n").strip()
+                        rename_files_and_folders(input_folder, base_name_zip)
+                    elif choie == "2":
+                        input_folder = input("Nhập đường dẫn đến Folder chứa các folder muốn nén: ").strip()
+                        zip_folders(input_folder, input_folder)
+                    elif choie == "3":
+                        input_folder = input("Nhập đường dẫn đến Folder chứa các folder muốn đổi tên và nén: ").strip()
+                        base_name_zip = input("Nhập tên cơ bản của folder VD: xatrungkhanh_hgl_thd.KH\n").strip()
+                        rename_files_and_folders(input_folder, base_name_zip)
+                        zip_folders(input_folder, input_folder)
+                    elif choie == "4":
+                        input_folder = input("Nhập đường dẫn đến Folder gốc để nén: ").strip()
+                        zipNhieu_folders(input_folder)
+                    elif choie == "5":
+                        input_folder = input("Nhập đường dẫn đến Folder gốc chứa các loại sổ : ").strip()
+                        DoitenNhieu_folders(input_folder)
+                    elif choie == "6":
+                        input_folder = input("Nhập đường dẫn đến Folder gốc chứa các loại sổ : ").strip()
+                        DoitenNhieu_folders(input_folder)
+                        zipNhieu_folders(input_folder)
+                    else:
+                        print("Lựa chọn không hợp lệ. Hãy chọn lại.")
+                    print("Chuyển đổi hoàn thành.".center(100,'^'))
+                elif choice == '7':
+                    pdf_folder = input("Nhập Đường Dẫn Folder Cần Nén PDF: ").strip()
+                    pdf_luu = input("Nhập Đường Dẫn Folder Lưu: ").strip()
+                    # Tìm đường dẫn Ghostscript
+                    gs_path = find_ghostscript_path()
+                    # Nén tất cả các tệp PDF trong thư mục sử dụng đa luồng nếu số lượng file lớn hơn 20
+                    compress_pdfs_in_folder(pdf_folder, gs_path,pdf_luu)
+                    print("Nén Thành Công")
+                elif choice == '8':
+                    handle_rename_files()
+                elif choice == '9':
+                    break
+                else:
+                    print("Lựa chọn không hợp lệ. Hãy chọn lại.")
+            except:
+                print("something went wrong please try again ")
+except:
+    print("something went wrong please try again ")
